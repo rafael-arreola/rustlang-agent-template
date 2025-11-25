@@ -1,6 +1,7 @@
+use crate::agents::tools::cost_database::CostDatabase;
 use rig::{
     agent::{Agent, AgentBuilder},
-    completion::{Prompt, CompletionModel},
+    completion::{CompletionModel, Prompt},
     tool::Tool,
 };
 use schemars::JsonSchema;
@@ -18,21 +19,22 @@ pub struct DamageReportArgs {
 }
 
 #[derive(Clone)]
-pub struct DamageSpecialist<M: CompletionModel> {
+pub struct DamageSpecialist<M: CompletionModel + Clone + Send + Sync + 'static> {
     agent: Arc<Agent<M>>,
 }
 
-impl<M: CompletionModel + Send + Sync + 'static> DamageSpecialist<M> {
+impl<M: CompletionModel + Clone + Send + Sync + 'static> DamageSpecialist<M> {
     pub fn new(model: M) -> Self {
         let agent = AgentBuilder::new(model)
             .preamble(include_str!("system_prompt.md"))
+            .tool(CostDatabase)
             .build();
 
         Self { agent: Arc::new(agent) }
     }
 }
 
-impl<M: CompletionModel + Send + Sync + 'static> Tool for DamageSpecialist<M> {
+impl<M: CompletionModel + Clone + Send + Sync + 'static> Tool for DamageSpecialist<M> {
     const NAME: &'static str = "damage_specialist";
 
     type Args = DamageReportArgs;

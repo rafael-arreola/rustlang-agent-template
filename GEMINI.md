@@ -8,30 +8,28 @@ El sistema sigue un patrón de **Orquestación y Especialización**. A diferenci
 
 ### Mapa del Territorio
 
-- **`src/agents`**: **El Cerebro.** Contiene la lógica de los agentes.
-  - **`orchestrator`**: El agente principal que recibe la intención del usuario y decide qué especialista activar.
-  - **`specialized`**: Agentes expertos en una tarea única (ej. `address`, `damage`). Son invocados como herramientas.
-  - _Regla_: Los `system_prompt.md` deben vivir junto al código del agente para mantener contexto y lógica unidos.
-
-- **`src/tools`**: **Las Manos.** Funciones deterministas que los agentes pueden ejecutar.
-  - Aquí se definen las estructuras que implementan el trait `Tool` de la librería `rig`.
-  - _Regla_: Las herramientas deben ser puras o manejar sus propios side-effects de forma aislada.
+- **`src/agents`**: **El Cerebro y las Manos.**
+  - **`orchestrator`**: El agente principal que recibe la intención del usuario.
+  - **`specialized`**: Agentes expertos en tareas únicas (ej. `address`, `damage`).
+  - **`tools`**: **Las Manos.** Funciones deterministas que los agentes pueden ejecutar (ej. `geocoding`, `calculators`).
+    - _Regla_: Las herramientas deben ser puras o manejar sus propios side-effects de forma aislada.
+  - _Regla General_: Todo lo relacionado con la inteligencia o ejecución de tareas vive aquí.
 
 - **`src/infra`**: **El Sistema Nervioso.** Conexiones a servicios externos.
-  - **`llm.rs`**: Configuración centralizada de proveedores (OpenAI, Anthropic, Gemini).
   - **`telemetry.rs`**: Observabilidad.
-  - _Regla_: Nunca instancies un cliente de LLM (`Client::from_env`) fuera de esta capa.
 
 - **`src/api`**: **Los Sentidos.** La interfaz HTTP.
   - Recibe peticiones externas y se las pasa al `Orchestrator`. No contiene lógica de negocio, solo transformación de DTOs.
 
 - **`src/state.rs`**: **Memoria a Corto Plazo.**
-  - Mantiene el estado compartido de la aplicación (referencias a los agentes inicializados).
+  - Mantiene el estado compartido de la aplicación (referencias al orquestador).
 
 ## 2. Stack Tecnológico & Estándares
 
 - **Framework de Agentes**: `rig` (Rust Intelligent Graph).
-- **Inyección de Modelos**: Se prefiere la inyección explícita de modelos en los constructores de los agentes para facilitar el testing y el cambio de proveedores (ej. cambiar GPT-4 por Claude 3.5 Sonnet según la tarea).
+- **Inyección de Modelos**:
+  - **Especialistas**: Deben ser genéricos (`struct MyAgent<M: CompletionModel...>`) para aceptar cualquier modelo inyectado.
+  - **Orquestador**: Decide qué modelo concreto usa cada especialista.
 
 ### Reglas de Implementación
 
@@ -55,4 +53,4 @@ Para añadir una nueva capacidad al sistema:
 
 ---
 
-**Nota para IA:** Al generar código, recuerda que estamos usando `rig`. Verifica `src/infra/llm.rs` para ver qué modelos están disponibles y pre-configurados. Prioriza el uso de `Gemini Flash` para tareas de alta velocidad y `Claude Sonnet` o `GPT-4o` para razonamiento complejo.
+**Nota para IA:** Al generar código, recuerda que estamos usando `rig`. Verifica `src/agents/orchestrator/mod.rs` para ver qué modelos están disponibles y pre-configurados. Prioriza el uso de `Gemini Flash` para tareas de alta velocidad y `Claude Sonnet` o `GPT-4o` para razonamiento complejo.

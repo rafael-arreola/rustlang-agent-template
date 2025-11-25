@@ -6,6 +6,7 @@ use axum::{
 };
 use std::sync::Arc;
 use tower_http::{
+    compression::CompressionLayer,
     cors::{Any, CorsLayer},
     trace::TraceLayer,
 };
@@ -21,6 +22,7 @@ pub fn app_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health_check))
         .route("/chat", post(chat_handler))
         .layer(TraceLayer::new_for_http())
+        .layer(CompressionLayer::new())
         .layer(cors)
         .with_state(state)
 }

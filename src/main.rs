@@ -1,34 +1,45 @@
-mod api;
-mod infra;
-mod tools;
 mod agents;
+mod api;
+mod envs;
+mod infra;
 mod state;
 
+use dotenv::dotenv;
 use std::sync::Arc;
-use dotenvy::dotenv;
 
 #[tokio::main]
 async fn main() {
+    // Initialize crypto provider for rustls
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install default crypto provider");
+
     dotenv().ok();
 
     // 1. Initialize Tracing (Logging)
-    infra::telemetry::init_tracing();
+    if let Err(e) = infra::telemetry::init_tracing().await {
+        eprintln!("Failed to initialize tracing: {}", e);
+    }
 
-    // 2. Initialize Orchestrator (It handles its own models internally)
+    // 2. Initialize Orchestrator
     let orchestrator = agents::orchestrator::Orchestrator::new();
 
-    // 3. Initialize State (Shared Memory)
-    let state = Arc::new(state::AppState::new(orchestrator));
+    // 2.1 Initialize Redis
+    let redis_provider = infra::redis::RedisProvider::new().expect("Failed to initialize Redis");
 
-    // 4. Setup Router (The Nervous System)
+    // 3. Initialize State
+    let state = Arc::new(state::AppState::new(orchestrator, redis_provider));
+
+    // 4. Setup Router
     let app = api::routes::app_router(state);
 
     // 5. Start Server
-    let port = std::env::var("PORT").unwrap_or_else(|_| "3000".into());
+    let config = envs::get();
+    let port = config.port;
     let addr = format!("0.0.0.0:{}", port);
-    
-    tracing::info!("🚀 Server starting on {}", addr);
-    
+
+    tracing::info!("Server starting on {}", addr);
+
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

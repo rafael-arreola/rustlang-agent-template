@@ -1,2 +1,2 @@
-pub mod llm;
 pub mod telemetry;
+pub mod redis;

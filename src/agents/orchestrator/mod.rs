@@ -1,33 +1,79 @@
 use super::specialized::{address::AddressSpecialist, damage::DamageSpecialist};
-use crate::infra::llm;
-use rig::{
-    agent::{Agent, AgentBuilder},
-    providers::openai,
+use super::AnyModel;
+use crate::infra::redis::{ChatMessage, Role};
+use rig::agent::{Agent, AgentBuilder};
+use rig::client::CompletionClient;
+use rig::completion::{Chat, Message};
+use rig::message::{AssistantContent, UserContent};
+use rig::providers::gemini;
+use rig::providers::gemini::completion::gemini_api_types::{
+    AdditionalParameters, GenerationConfig,
 };
+use rig::OneOrMany;
 
 pub struct Orchestrator {
-    pub agent: Agent<openai::CompletionModel>,
+    pub agent: Agent<AnyModel>,
 }
 
 impl Orchestrator {
     pub fn new() -> Self {
-        // 1. Configuramos los Modelos (Strings manuales con sintaxis limpia)
+        // 1. Configuramos los Modelos
+        // Aquí puedes seleccionar qué modelo usar para el orquestador y para cada herramienta.
 
-        let gpt_model = llm::openai("gpt-4o");
-        let gemini_model = llm::gemini("gemini-1.5-flash-002");
-        let sonnet_model = llm::anthropic("claude-3-5-sonnet-20241022");
+        // Gemini
+        // gemini-2.5-flash, gemini-2.5-pro, gemini-3-pro-preview
+        let config = crate::envs::get();
+        let gemini_client = gemini::client::Client::new(&config.gemini_api_key);
+        let gemini_model = gemini_client.completion_model("gemini-2.5-flash");
+        let gemini_model = AnyModel::new(Box::new(gemini_model));
 
         // 2. Inicializamos los Sub-Agentes (Tools)
-        let address_tool = AddressSpecialist::new(gemini_model);
-        let damage_tool = DamageSpecialist::new(sonnet_model);
+        let address_tool = AddressSpecialist::new(gemini_model.clone());
+        let damage_tool = DamageSpecialist::new(gemini_model.clone());
 
-        // 3. Construimos el Agente Principal
-        let agent = AgentBuilder::new(gpt_model)
+        // 3. Configuramos los Parámetros de Generación
+        let gen_cfg = GenerationConfig {
+            top_k: Some(1),
+            top_p: Some(0.95),
+            candidate_count: Some(1),
+            ..Default::default()
+        };
+        let cfg = AdditionalParameters::default().with_config(gen_cfg);
+
+        // 4.  Construimos el Agente Principal
+        let agent = AgentBuilder::new(gemini_model.clone())
             .preamble(include_str!("system_prompt.md"))
             .tool(address_tool)
             .tool(damage_tool)
+            .additional_params(serde_json::to_value(cfg).unwrap())
             .build();
 
         Self { agent }
+    }
+
+    pub async fn chat(&self, prompt: &str, history: Vec<ChatMessage>) -> String {
+        let rig_history: Vec<Message> = history
+            .into_iter()
+            .map(|msg| match msg.role {
+                Role::User => Message::User {
+                    content: OneOrMany::one(UserContent::text(msg.content)),
+                },
+                Role::System => Message::User {
+                    content: OneOrMany::one(UserContent::text(format!(
+                        "[System Context]: {}",
+                        msg.content
+                    ))),
+                },
+                Role::Assistant => Message::Assistant {
+                    content: OneOrMany::one(AssistantContent::text(msg.content)),
+                    id: None,
+                },
+            })
+            .collect();
+
+        self.agent
+            .chat(prompt, rig_history)
+            .await
+            .expect("Failed to chat with Orchestrator")
     }
 }
