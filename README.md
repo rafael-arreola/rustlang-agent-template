@@ -1,6 +1,16 @@
 # 🤖 Rust AI Agent Template
 
-Este proyecto es una plantilla robusta y escalable para construir sistemas multi-agente utilizando **Rust** y la librería **Rig**. Implementa una arquitectura de **Orquestador-Especialistas**.
+Esta plantilla proporciona una base de nivel empresarial para construir sistemas de **Agentes de IA** en Rust. Utiliza el framework **Rig** para la lógica agéntica y **Axum** para la interfaz HTTP, diseñado con una arquitectura modular y escalable.
+
+---
+
+## ✨ Características Principales
+
+- **Arquitectura Orquestador-Especialistas**: Patrón jerárquico donde un agente principal delega tareas complejas a sub-agentes expertos.
+- **Memoria Persistente (Redis)**: Historial de chat y estado de sesión mantenido en Redis, permitiendo conversaciones continuas y escalabilidad horizontal.
+- **Herramientas Tipadas**: Sistema robusto de `Tools` definidas con structs de Rust, minimizando alucinaciones y errores de ejecución.
+- **Observabilidad**: Telemetría integrada con `tracing` para monitorear el flujo de decisiones de los agentes.
+- **API RESTful**: Interfaz HTTP lista para producción con Axum.
 
 ---
 
@@ -8,22 +18,28 @@ Este proyecto es una plantilla robusta y escalable para construir sistemas multi
 
 ### 1. Prerrequisitos
 
-- Rust (latest stable)
-- Claves de API para los modelos que desees usar (OpenAI, Anthropic, Google Gemini).
+- **Rust** (versión estable reciente)
+- **Redis** (ejecutándose localmente o accesible vía URL)
+- **API Keys** de proveedores LLM (OpenAI, Anthropic o Google Gemini)
 
 ### 2. Configuración
 
 1. Clona el repositorio.
-2. Copia el archivo de variables de entorno:
+2. Copia el archivo de ejemplo:
    ```bash
    cp .env.example .env
    ```
-3. Edita `.env` y añade tus claves:
-   ```env
-   OPENAI_API_KEY=sk-...
-   GEMINI_API_KEY=...
-   ANTHROPIC_API_KEY=...
-   ```
+3. Configura tus variables en `.env`. A continuación se detallan las más importantes:
+
+   | Variable | Descripción | Valor por Defecto |
+   | :--- | :--- | :--- |
+   | `PORT` | Puerto del servidor HTTP | `8080` |
+   | `REDIS_URL` | Conexión a Redis | `redis://default@localhost:6379` |
+   | `SESSION_TTL` | Tiempo de vida de la sesión (segundos) | `86400` (24h) |
+   | `OPENAI_API_KEY` | Key para GPT-4o, etc. | - |
+   | `GEMINI_API_KEY` | Key para modelos Gemini | - |
+   | `ANTHROPIC_API_KEY`| Key para Claude 3.5 Sonnet | - |
+   | `DEBUG_LEVEL` | Nivel de logs (INFO, DEBUG, TRACE) | `INFO` |
 
 ### 3. Ejecutar
 
@@ -31,111 +47,81 @@ Este proyecto es una plantilla robusta y escalable para construir sistemas multi
 cargo run
 ```
 
-El servidor iniciará (por defecto en puerto 8080).
+El servidor iniciará en `http://0.0.0.0:8080`.
 
 ---
 
-## 🧠 Arquitectura
+## 🔌 API Reference
 
-El sistema funciona como una "colmena" jerárquica:
+### Chat (`POST /chat`)
 
-1.  **Orquestador (`agents/orchestrator`)**: Es el punto de entrada. Recibe el prompt del usuario, "piensa" y decide si puede responder directamente, usar una herramienta básica o invocar a un especialista.
-2.  **Especialistas (`agents/specialized`)**: Son sub-agentes expertos en una tarea específica (ej. obtener dirección, evaluar daños). Se comportan como `Tools` complejas para el orquestador. A su vez, **ellos tienen sus propias herramientas**.
-3.  **Herramientas (`agents/tools/`)**: Son "Las Manos" del sistema. Funciones deterministas (código puro) que ejecutan acciones concretas (consultar DB, invertir texto, calcular coordenadas).
-4.  **Infraestructura (`infra/`)**: Maneja la conexión con los proveedores de LLM (OpenAI, Google, Anthropic).
+Interactúa con el orquestador. El sistema mantendrá el contexto basado en el `session_id` si se provee (header o body, según implementación de cliente).
 
-### Concepto Clave: Agente vs Herramienta
+**Request:**
+```json
+{
+  "prompt": "Hola, necesito validar una dirección en Madrid",
+  "session_id": "user-123" 
+}
+```
 
-*   **Agente (Specialist)**: Tiene cerebro (LLM). Puede razonar, tomar decisiones y usar múltiples herramientas para llegar a un resultado.
-    *   *Ejemplo*: `AddressSpecialist` (Recibe una dirección mal escrita, la corrige, busca coordenadas y confirma si es válida).
-*   **Herramienta (Tool)**: No piensa. Solo ejecuta una instrucción y devuelve un dato.
-    *   *Ejemplo*: `GeoCoding` (Toma "Calle 123" y devuelve `lat: 10, lng: 20`).
-
----
-
-## 🛠️ Cómo agregar un Nuevo Agente Especialista
-
-Sigue estos 5 pasos para extender la funcionalidad del sistema. Usaremos el **`dummy`** como base.
-
-### Paso 1: Copiar el Esqueleto
-
-Ve a `src/agents/specialized/` y copia la carpeta `dummy` con un nuevo nombre (ej. `analyst`).
-
+**Ejemplo cURL:**
 ```bash
-cd src/agents/specialized
-cp -r dummy analyst
+curl -X POST http://localhost:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "¿Cuál es el estatus del envío #99?", "session_id": "test-1"}'
 ```
-
-### Paso 2: Definir el "Cerebro" (System Prompt)
-
-Edita `src/agents/specialized/analyst/system_prompt.md`.
-
-- Escribe instrucciones claras sobre qué debe hacer este agente.
-- Define su personalidad y limitaciones.
-
-### Paso 3: Implementar la Lógica (Código)
-
-Edita `src/agents/specialized/analyst/mod.rs`:
-
-1.  **Renombra los Structs**: Cambia `DummyArgs`, `DummyOutput` y `DummySpecialist` por `AnalystArgs`, etc.
-2.  **Define Inputs/Outputs**: Ajusta los structs `Args` para reflejar qué datos necesita este agente del orquestador.
-3.  **Implementa `Tool`**:
-    - Actualiza `const NAME`.
-    - En `definition()`: Describe **cuándo** el orquestador debe usar esta herramienta. ¡La descripción es clave para que el LLM orquestador entienda su uso!
-    - En `call()`: Define qué sucede al ejecutarlo (llamar al sub-agente LLM, consultar una base de datos, etc.).
-
-### Paso 4: Exportar el Módulo
-
-Edita `src/agents/specialized/mod.rs` y añade tu nuevo módulo:
-
-```rust
-pub mod address;
-pub mod damage;
-pub mod dummy;
-pub mod analyst; // <--- Tu nuevo agente
-```
-
-### Paso 5: Conectar al Orquestador
-
-Finalmente, "presenta" al nuevo especialista con el jefe.
-Edita `src/agents/orchestrator/mod.rs`:
-
-1.  Importa tu módulo:
-    ```rust
-    use super::specialized::{address::AddressSpecialist, analyst::AnalystSpecialist};
-    ```
-2.  Instáncialo en `Orchestrator::new()`. Aquí decides qué "cerebro" (modelo) usará.
-    ```rust
-    // Usa el modelo principal (gemini_flash) o crea uno específico
-    let analyst_tool = AnalystSpecialist::new(model.clone());
-    ```
-3.  Añádelo al builder del agente principal:
-    ```rust
-    let agent = AgentBuilder::new(model)
-        .preamble(include_str!("system_prompt.md"))
-        .tool(address_tool)
-        .tool(analyst_tool) // <--- Conectado
-        .build();
-    ```
-
-### Paso 6 (Opcional): Actualizar al Jefe
-
-Si la herramienta es compleja, actualiza `src/agents/orchestrator/system_prompt.md` mencionando que ahora tiene capacidad de análisis, para reforzar su decisión de usarla.
 
 ---
 
-## 📂 Estructura del Proyecto
+## 🧠 Arquitectura del Sistema
 
-```
-src/
-├── agents/                # Núcleo de la IA
-│   ├── orchestrator/      # Agente Principal (Router)
-│   ├── specialized/       # Sub-Agentes (Tools cognitivas)
-│   └── tools/             # Herramientas Ejecutables (Funciones)
-│       ├── geocoding.rs
-│       └── ...
-├── infra/                 # Proveedores de LLM y Observabilidad
-├── api/                   # Endpoints HTTP
-├── state.rs               # Estado global de la app
-└── main.rs                # Entrypoint
-```
+El sistema emula una organización inteligente:
+
+### 1. 🎼 Orquestador (`agents/orchestrator`)
+Es el gerente general. Recibe todas las peticiones, mantiene la "Big Picture" y decide a quién asignar el trabajo.
+- **Responsabilidad**: Entender la intención, mantener la conversación y delegar.
+- **Memoria**: Recupera el historial de chat desde Redis antes de cada interacción.
+
+### 2. 🕵️ Especialistas (`agents/specialized`)
+Son expertos de dominio (ej. `AddressSpecialist`, `DamageEvaluator`).
+- Se inyectan al orquestador como **Herramientas Avanzadas**.
+- Tienen su propio System Prompt y pueden usar sus propias herramientas (ej. consultar base de datos, API externa).
+- **Ventaja**: Permite usar modelos más pequeños/rápidos para tareas específicas, o prompts muy detallados sin "contaminar" el contexto principal.
+
+### 3. 🛠️ Herramientas (`agents/tools`)
+Funciones puras o deterministas que ejecutan acciones concretas.
+- **Ejemplos**: `GeoCoding`, `CostCalculator`, `TextReverser`.
+- No usan LLM, son código Rust estándar.
+
+### 4. 💾 Estado y Memoria (`infra/redis.rs`)
+- **RedisProvider**: Abstracción sobre `redis-rs`.
+- Almacena el historial de mensajes serializado en JSON.
+- Permite que el agente "recuerde" lo dicho 5 turnos atrás.
+
+---
+
+## 🛠️ Guía de Desarrollo: Crear un Nuevo Especialista
+
+Pasos para añadir una nueva capacidad (ej. `FinancialAnalyst`) al sistema.
+
+### Paso 1: Crear el Módulo
+Duplica la carpeta `src/agents/specialized/dummy` y renómbrala a `analyst`.
+
+### Paso 2: Definir el Prompt
+Edita `analyst/system_prompt.md`. Define claramente qué hace y qué NO hace este agente.
+> "Eres un experto financiero. Tu trabajo es analizar riesgos..."
+
+### Paso 3: Implementar la Lógica
+En `analyst/mod.rs`:
+1. Renombra los structs (`AnalystArgs`, `AnalystOutput`).
+2. Define los argumentos que necesita recibir (ej. `amount`, `currency`).
+3. Implementa el trait `Tool`. La función `definition()` es crucial: describe al LLM orquestador **cuándo** usar esta herramienta.
+
+### Paso 4: Registrar
+1. En `src/agents/specialized/mod.rs`: `pub mod analyst;`
+2. En `src/agents/orchestrator/mod.rs`:
+   - Instancia el agente: `let analyst = AnalystSpecialist::new(model.clone());`
+   - Añádelo al builder: `.tool(analyst)`
+
+¡Listo! El orquestador ahora tiene un experto financiero en su equipo.
