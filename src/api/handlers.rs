@@ -1,6 +1,9 @@
 use crate::{
     api::request::{ChatRequest, ChatResponse},
-    infra::redis::{ChatMessage, Role},
+    infra::{
+        errors::{DomainError, DomainResult},
+        redis::{ChatMessage, Role},
+    },
     state::AppState,
 };
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
@@ -14,29 +17,26 @@ pub async fn health_check() -> impl IntoResponse {
 pub async fn chat_handler(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<ChatRequest>,
-) -> impl IntoResponse {
-    // 1. Session Management
+) -> Result<impl IntoResponse, DomainError> {
+    let prompt = validate_prompt(&payload.prompt)?;
+
     let session_id = payload
         .session_id
         .clone()
         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-    // 2. Load History
     let history = state
         .redis
         .get_history(&session_id)
         .await
         .unwrap_or_default();
 
-    // 3. Process with Orchestrator (with history)
-    // The chat method currently handles the prompt + history interaction
-    let response_text = state.orchestrator.chat(&payload.prompt, history).await;
+    let response_text = state.orchestrator.chat(&prompt, history).await;
 
-    // 4. Save History (User + Assistant)
     let new_messages = vec![
         ChatMessage {
             role: Role::User,
-            content: payload.prompt.clone(),
+            content: prompt,
         },
         ChatMessage {
             role: Role::Assistant,
@@ -48,13 +48,27 @@ pub async fn chat_handler(
         tracing::warn!("Failed to save chat history: {}", e);
     }
 
-    // 5. Response
-    (
+    Ok((
         StatusCode::OK,
         Json(ChatResponse {
             response: response_text,
             session_id,
         }),
-    )
-        .into_response()
+    ))
+}
+
+fn validate_prompt(prompt: &str) -> DomainResult<String> {
+    let trimmed = prompt.trim();
+
+    if trimmed.is_empty() {
+        return Err(DomainError::validation("El prompt no puede estar vacío"));
+    }
+
+    if trimmed.len() > 10_000 {
+        return Err(DomainError::validation(
+            "El prompt excede el límite de 10,000 caracteres",
+        ));
+    }
+
+    Ok(trimmed.to_string())
 }
