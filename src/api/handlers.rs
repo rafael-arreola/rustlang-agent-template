@@ -44,7 +44,9 @@ pub async fn chat_handler(
         },
     ];
 
-    let _ = state.redis.add_messages(&session_id, new_messages).await;
+    if let Err(e) = state.redis.add_messages(&session_id, new_messages).await {
+        tracing::warn!("Failed to save chat history: {}", e);
+    }
 
     // 5. Response
     (
