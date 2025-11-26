@@ -125,3 +125,9 @@ En `analyst/mod.rs`:
    - Añádelo al builder: `.tool(analyst)`
 
 ¡Listo! El orquestador ahora tiene un experto financiero en su equipo.
+
+---
+
+## 📚 Recursos Adicionales
+
+- **Documentación del crate `rig`**: Para una comprensión profunda de los componentes y la API de Rig, consulta la documentación oficial en [docs.rs](https://docs.rs/rig/latest/rig/).
