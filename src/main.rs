@@ -4,17 +4,13 @@ mod envs;
 mod infra;
 mod state;
 
-use dotenv::dotenv;
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() {
-    // Initialize crypto provider for rustls
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
         .expect("Failed to install default crypto provider");
-
-    dotenv().ok();
 
     // 1. Initialize Tracing (Logging)
     if let Err(e) = infra::telemetry::init_tracing().await {
