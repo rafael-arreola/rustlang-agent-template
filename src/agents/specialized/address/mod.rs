@@ -63,14 +63,9 @@ impl<M: CompletionModel + Clone + Send + Sync + 'static> Tool for AddressSpecial
             args.customer_id, args.new_address, args.reason
         );
 
-        let agent = self.agent.clone();
-
-        // Spawn a task to ensure the future is Send + Sync compatible if needed,
-        // and to handle the async call cleanly.
-        let response = tokio::spawn(async move { agent.prompt(&prompt).await })
+        self.agent
+            .prompt(&prompt)
             .await
-            .map_err(|e| ToolError(format!("Agent execution error: {}", e)))?;
-
-        Ok(response)
+            .map_err(|e| ToolError(format!("Agent execution error: {}", e)))
     }
 }

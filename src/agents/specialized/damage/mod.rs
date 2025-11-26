@@ -60,12 +60,9 @@ impl<M: CompletionModel + Clone + Send + Sync + 'static> Tool for DamageSpeciali
             args.item_name, args.description_of_damage
         );
 
-        let agent = self.agent.clone();
-
-        let response = tokio::spawn(async move { agent.prompt(&prompt).await })
+        self.agent
+            .prompt(&prompt)
             .await
-            .map_err(|e| ToolError(format!("Agent execution error: {}", e)))?;
-
-        Ok(response)
+            .map_err(|e| ToolError(format!("Agent execution error: {}", e)))
     }
 }
