@@ -1,4 +1,5 @@
 use anyhow::Result;
+use redis::aio::MultiplexedConnection;
 use redis::AsyncCommands;
 use serde::{Deserialize, Serialize};
 
@@ -17,22 +18,23 @@ pub struct ChatMessage {
 
 #[derive(Clone)]
 pub struct RedisProvider {
-    client: redis::Client,
+    connection: MultiplexedConnection,
     base_path: String,
     ttl: u64,
 }
 
 impl RedisProvider {
-    pub fn new() -> Result<Self> {
+    pub async fn new() -> Result<Self> {
         let config = crate::envs::get();
         let redis_url = &config.redis_url;
         let base_path = config.redis_base_path.clone();
         let ttl = config.session_ttl;
 
         let client = redis::Client::open(redis_url.as_str())?;
+        let connection = client.get_multiplexed_async_connection().await?;
 
         Ok(Self {
-            client,
+            connection,
             base_path,
             ttl,
         })
@@ -43,7 +45,7 @@ impl RedisProvider {
     }
 
     pub async fn get_history(&self, session_id: &str) -> Result<Vec<ChatMessage>> {
-        let mut con = self.client.get_multiplexed_async_connection().await?;
+        let mut con = self.connection.clone();
         let key = self.get_key(session_id);
 
         let messages: Vec<String> = con.lrange(&key, 0, -1).await?;
@@ -59,7 +61,7 @@ impl RedisProvider {
             return Ok(());
         }
 
-        let mut con = self.client.get_multiplexed_async_connection().await?;
+        let mut con = self.connection.clone();
         let key = self.get_key(session_id);
 
         let serialized: Vec<String> = messages

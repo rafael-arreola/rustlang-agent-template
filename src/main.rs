@@ -25,7 +25,9 @@ async fn main() {
     let orchestrator = agents::orchestrator::Orchestrator::new();
 
     // 2.1 Initialize Redis
-    let redis_provider = infra::redis::RedisProvider::new().expect("Failed to initialize Redis");
+    let redis_provider = infra::redis::RedisProvider::new()
+        .await
+        .expect("Failed to initialize Redis");
 
     // 3. Initialize State
     let state = Arc::new(state::AppState::new(orchestrator, redis_provider));
